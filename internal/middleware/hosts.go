@@ -102,10 +102,10 @@ func (mw *Default) resolveFromHosts(
 	name := strings.TrimSuffix(q.Name, ".")
 	switch q.Qtype {
 	case dns.TypeA:
-		addrs = slices.Clone(mw.hosts.ByName(name))
+		addrs = slices.Clone(mw.wildcardByName(name))
 		addrs = slices.DeleteFunc(addrs, netip.Addr.Is6)
 	case dns.TypeAAAA:
-		addrs = slices.Clone(mw.hosts.ByName(name))
+		addrs = slices.Clone(mw.wildcardByName(name))
 		addrs = slices.DeleteFunc(addrs, netip.Addr.Is4)
 	case dns.TypePTR:
 		addr, err := netutil.IPFromReversedAddr(name)
@@ -134,4 +134,22 @@ func (mw *Default) resolveFromHosts(
 	}
 
 	return resp
+}
+
+// wildcardByName returns the hosts records for name. If there is no exact
+// match, it looks for a "*.parent" record, walking up the labels of name, so
+// "10.10.2.230 *.example.com" answers every subdomain of example.com.
+func (mw *Default) wildcardByName(name string) (addrs []netip.Addr) {
+	addrs = mw.hosts.ByName(name)
+	for len(addrs) == 0 {
+		_, parent, ok := strings.Cut(name, ".")
+		if !ok || parent == "" {
+			return nil
+		}
+
+		name = parent
+		addrs = mw.hosts.ByName("*." + name)
+	}
+
+	return addrs
 }
